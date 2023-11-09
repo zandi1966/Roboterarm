@@ -1,0 +1,226 @@
+"""Main file of the robotic arm project."""
+
+# Import python libraries
+import sys
+import time
+
+# Import external python packages for object detection
+import numpy as np
+import cv2 as cv
+
+# Import relevant methods
+from robotarm.camera.calculate_movement import calculate_rotation_degrees
+from robotarm.camera.calculate_movement import calculate_distance
+from robotarm.camera.stack_images import stack_images
+from robotarm.robot.robotic_arm_adjust import checkInside
+from robotarm.robot.robotic_arm_adjust import rotate
+from robotarm.robot.robotic_arm_adjust import calc_rotationdegree
+
+# Import the robotic arm and the camera class
+from robotarm.robot.robotic_arm import RoboticArm
+from robotarm.camera.camera import Camera
+
+# Initialize the robotic arm
+arm = RoboticArm()
+
+# Initialise the camera
+cam = Camera(640, 480, cv.VideoCapture(0))
+
+# Initialize constants to exit the program
+WAIT_KEYPRESS_MSEC = 20
+MODIFIER_MASK = 0xFF
+ESC_KEY = 27
+
+# Check if the capturing works
+if not cam.capture.isOpened():
+    print("ERROR: Capture not opened! Exiting...")
+    arm.switch_off()
+    print("\tDetermined the robotic arm successfully!")
+
+    cam.capture.release()
+    cv.destroyAllWindows()
+    print("\tDetermined the camera successfully!")
+
+    sys.exit()
+
+
+# Create window to set parameters
+cv.namedWindow("Parameters")
+cv.resizeWindow("Parameters", 640, 240)
+# Set thresholds for Canny edge detection
+# Upper threshold
+cv.createTrackbar("Threshold1", "Parameters", 40, 255, lambda _: ...)
+# Lower threshold
+cv.createTrackbar("Threshold2", "Parameters", 120, 255, lambda _: ...)
+# Minimum area required for an object to be detected
+cv.createTrackbar("Area (min)", "Parameters", 1500, 100000, lambda _: ...)
+# Maximum area for an object to be detected
+cv.createTrackbar("Area (max)", "Parameters", 7000, 100000, lambda _: ...)
+
+# Get background to eliminate
+gray_median_frame = cam.get_median_frame()
+
+# Variable to determine if it is the first loop
+FIRST_LOOP = True
+
+# Variable to determine if objects and when they are found
+OBJECTS_FOUND_AT = 0
+OBJECTS_FOUND = False
+
+# Default/Starting position of the hand
+# 296,260
+HAND_POSITION = (332,231)
+BASE_POSITION = (318,10)
+hand_Poly = [(323,259), (347,256), (358,449),(333, 451)]
+DISTANCE_BASE_TO_HAND = int(((HAND_POSITION[0] - BASE_POSITION[0]) ** 2 +
+                             (HAND_POSITION[1] - BASE_POSITION[1]) ** 2) ** .5)
+
+while True:
+    # Give the camera a frame to correctly initialize
+    if FIRST_LOOP:
+        FIRST_LOOP = False
+        continue
+
+    # Read each frame
+    success, image_original = cam.capture.read()
+ 
+    # Check if the stream is working properly
+    if not success:
+        arm.switch_off()
+        print("\tDetermined the robotic arm successfully!")
+
+        cam.capture.release()
+        cv.destroyAllWindows()
+        print("\tDetermined the camera successfully!")
+
+        sys.exit()
+
+    # Blur the image to better detect edges
+    image_blurred = cv.GaussianBlur(image_original, (7, 7), 1)
+
+    # Convert image to grayscale to better detect edges
+    image_grayscale = cv.cvtColor(image_blurred, cv.COLOR_BGR2GRAY)
+
+    # Calculate absolute difference of current image and median frame
+    image_difference = cv.absdiff(image_grayscale, gray_median_frame)
+    
+    # mask the picture to remove the noise from around the ground 
+    mask=np.zeros(image_difference.shape[:2], dtype="uint8")
+    cv.circle(mask,(325,10),437,255,-1)
+    image_masked=cv.bitwise_and(image_difference, image_difference,mask=mask)
+    #cv.imshow("masekd_picture",image_masked)
+
+    # Threshold to binarize
+    _threshold,  image_masked = cv.threshold(
+        image_masked, 30, 255, cv.THRESH_BINARY)
+
+    # Get threshold values from trackbar
+    threshold1 = cv.getTrackbarPos("Threshold1", "Parameters")
+    threshold2 = cv.getTrackbarPos("Threshold2", "Parameters")
+
+    # Detect edges using Canny
+    image_canny = cv.Canny( image_masked, threshold1, threshold2)
+
+    # Remove overlaps and noise using dilation
+    kernel = np.ones((5,5))
+    image_dilation = cv.dilate(image_canny, kernel, iterations=1)
+
+    # Get contours of image to detect objects
+    image_objects = image_original.copy()
+    centroids = Camera.get_contours(image_dilation, image_objects)
+
+    # Put text on each image to identify them
+    cv.putText(image_original, "Original Image", (10, 25),
+               cv.FONT_HERSHEY_COMPLEX, 0.7, (255, 200, 0), 2)
+    cv.putText(image_difference, "Background removed", (10, 25),
+               cv.FONT_HERSHEY_COMPLEX, 0.7, (255, 200, 0), 2)
+    cv.putText(image_dilation, "Edge detection using Canny", (10, 25),
+               cv.FONT_HERSHEY_COMPLEX, 0.7, (255, 200, 0), 2)
+    cv.putText(image_objects, "Objects detected", (10, 25),
+               cv.FONT_HERSHEY_COMPLEX, 0.7, (255, 200, 0), 2)
+
+    # Stack the images into one window
+    image_stack = stack_images(0.8, ([image_original, image_difference],
+                                     [image_dilation, image_objects]))
+
+    # Display each frame
+    cv.imshow("Result", image_stack)
+
+    # Check if objects are found (Detected for the first time)
+    if len(centroids) > 0 and not OBJECTS_FOUND:
+        OBJECTS_FOUND = True
+        OBJECTS_FOUND_AT = time.time()
+
+    # Check if objects are still found and enough time has passed
+    if len(centroids) > 0 and OBJECTS_FOUND and time.time() - OBJECTS_FOUND_AT >= 5:
+        print("centroid: ", centroids[0])
+        
+        # Move the robotic arm to the center
+        arm.go_to_starting_position()
+        # Calculate the distances from the robotic arm to the objects
+        distances = calculate_distance(centroids, BASE_POSITION)
+        # Calculate the rotation degrees the robotic arm needs to perform
+        rotation_degrees = calculate_rotation_degrees(centroids, distances,
+                                                      BASE_POSITION)
+        # Calculate the distances from the hand to the objects
+        distances_hand_to_objects = [distance - DISTANCE_BASE_TO_HAND
+                                     for distance in distances]
+        print("distance hand to object: ", distances_hand_to_objects[0])
+        print("distance base to object: ", distances[0])
+        print("distance base to hand: ", DISTANCE_BASE_TO_HAND)
+        # Rotate the arm to the object
+        arm.rotate_by_degree(rotation_degrees[0])
+        time.sleep(1)
+        newHandPoly = rotate(hand_Poly, -rotation_degrees[0])
+        for x in newHandPoly:
+            print(x)
+        #print(checkInside(newHandPoly, len(newHandPoly), centroids[0]))
+        #if not checkInside(newHandPoly, len(newHandPoly), centroids[0]):
+            #print(calc_rotationdegree(newHandPoly, centroids[0][0], centroids[0][1]))
+        adjustDegree = calc_rotationdegree(newHandPoly, centroids[0][0], centroids[0][1])
+        arm.rotate_by_degree(-adjustDegree)
+        time.sleep(1)
+        newHandPoly = rotate(newHandPoly, adjustDegree)
+        for x in newHandPoly:
+            print(x)
+        adjustDegree = calc_rotationdegree(newHandPoly, centroids[0][0], centroids[0][1])
+        arm.rotate_by_degree(-adjustDegree)
+        time.sleep(1)
+        newHandPoly = rotate(newHandPoly, adjustDegree)
+        for x in newHandPoly:
+            print(x)
+        #arm.base.move_to_position(285)
+        time.sleep(.25)    
+        # Move the robotic arm forwards
+        #while arm.is_hand_opened:
+            #arm.move_forward(distances_hand_to_objects[0]/10)
+        arm.move(distances_hand_to_objects[0] / 10) #/10
+        time.sleep(1)
+        # Grab the object
+        arm.close_hand()
+        time.sleep(1.25)
+        #Move the robotic arm backwards
+        arm.move(distances_hand_to_objects[0] / 10, forward=False) #/10
+        time.sleep(1)
+        # Bring the object to the dropping place and drop it
+        arm.drop_object()
+        time.sleep(1)
+        OBJECTS_FOUND = False
+        OBJECTS_FOUND_AT = 0
+        FIRST_LOOP = True
+
+
+
+    # Determine the script by pressing the ESC-key
+    if cv.waitKey(WAIT_KEYPRESS_MSEC) & MODIFIER_MASK == ESC_KEY:
+        arm.go_to_starting_position()
+        break
+
+
+# Exit the program
+print("Program ended. Exiting...")
+arm.switch_off()
+print("\tDetermined the robotic arm successfully!")
+cam.capture.release()
+cv.destroyAllWindows()
+print("\tDetermined the camera successfully!")
