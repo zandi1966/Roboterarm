@@ -1,0 +1,212 @@
+"""Module that contains the Robotic_Arm class."""
+
+import time
+import Adafruit_PCA9685
+from robotarm.robot.hand import Hand
+from robotarm.robot.joint import Joint
+
+class RoboticArm:
+    """Robotic Arm class."""
+
+    def __init__(self):
+        """Initialize the robotic arm."""
+        self.pulse_width_modulation = Adafruit_PCA9685.PCA9685()
+        self.pulse_width_modulation.set_pwm_freq(60)
+        self.hand = Hand(self.pulse_width_modulation, 0)
+        self.base = Joint(self.pulse_width_modulation, 4, [100, 670], 410)
+        self.shoulder = Joint(self.pulse_width_modulation, 3, [100, 650], 240)
+        self.elbow = Joint(self.pulse_width_modulation, 2, [235, 680], 300)
+        self.wrist = Joint(self.pulse_width_modulation, 1, [155, 555], 265)
+
+        time.sleep(3)
+        #self.moving_test_shoulder()
+        #time.sleep(1)
+        #self.moving_test_elbow()
+        #time.sleep(1)
+        #self.open_hand()
+        #time.sleep(1)
+        #self.close_hand()
+        self.drop_object()
+
+    def switch_off(self):
+        """Determine the robotic arm."""
+        self.open_hand()
+        Adafruit_PCA9685.PCA9685()
+        print("The robotic arm has been determined.")
+
+    def open_hand(self):
+        """Open the hand servo."""
+        self.hand.open()
+
+    def close_hand(self):
+        """Close the hand servo."""
+        self.hand.close()
+
+    def is_hand_opened(self):
+        """Check if the hand is currently opened or closed."""
+        return self.hand.position == self.hand.servo_min
+
+    def rotate(self, movement, left_rotation=True):
+        """
+        Rotate the robotic arm.
+
+        The first argument is the movement the base servo needs to perform.
+        The second argument is an optional argument indicating in which direction
+        the base should move. Standard is a rotation to the left.
+        """
+        self.base.move_to_position(self.base.position +
+                                   (movement if left_rotation else -1 * movement))
+
+    def move_shoulder(self, new_position):
+        """
+        Move the shoulder servo.
+        The argument is the new position that the shoulder servo needs to move to.
+        """
+        self.shoulder.move_to_position(new_position)
+
+    def move_elbow(self, new_position):
+        """
+        Move the elbow servo.
+
+        The argument is the new position that the elbow servo needs to move to.
+        """
+        self.elbow.move_to_position(new_position)
+
+    def move_wrist(self, new_position):
+        """
+        Move the wrist servo.
+
+        The argument is the new position that the wrist servo needs to move to.
+        """
+        self.wrist.move_to_position(new_position)
+
+    def drop_object(self):
+        """Move the robotic arm to a drop place after picking up an object."""
+        # Raise the arm
+        #self.move_wrist(170)
+        #time.sleep(.25)
+        self.move_shoulder(300)
+        time.sleep(1)
+        self.base.move_to_position(135)
+        time.sleep(.25)
+        self.move_wrist(225)
+        self.move_elbow(300)
+        time.sleep(.25)
+        self.move_shoulder(240)
+        time.sleep(.25)
+        self.open_hand()
+        
+    def go_to_starting_position(self):
+        """Move the robotic arm to its starting position (after dropping an object)."""
+        self.move_shoulder(300)
+        time.sleep(1)
+        self.base.move_to_position(425)
+        time.sleep(.5)
+        self.move_elbow(320)
+        time.sleep(1)
+        self.move_shoulder(250)
+        time.sleep(1)
+        self.move_wrist(315)
+        time.sleep(.5)
+        
+        
+    def abraeumen(self):
+        self.base.move_to_position(625)
+        time.sleep(.5)
+        self.move_shoulder(210)
+        time.sleep(1)
+        self.move_elbow(310)
+        time.sleep(1)
+        self.move_wrist(295)
+        time.sleep(.5)
+        self.base.move_to_position(135)
+        time.sleep(.5)
+        
+        
+    def move(self, distance, forward=True):
+        """
+        Move the robotic arm forward or backwards.
+
+        The first parameter is the distance that robotic arm needs
+        to move (in centimeters).
+        The second parameter is the direction. Standard is forward.
+        """
+        normalized_distance = distance / .6
+        direction = 1 if forward else -1
+        if distance>14:
+                rotation = [int(direction * normalized_distance * servo_movement) #round(normalized_distance/4)
+                    for servo_movement in (6.5, -2.5, 5.6)] 
+        elif distance<14 and distance >2:
+                # Calculate the rotation of each servo(9: Elbow; -4: Shoulder; 4: Wrist)
+                rotation = [int(direction * normalized_distance * servo_movement) #round(normalized_distance/4)
+                    for servo_movement in (3, -2, 2.25)]        #2.645,-1.95,2 9, -4, 4 #40,-20,20
+        else:
+                print("Roboterarm ist wütend, weil der Würfel nicht in der Reichweite war")
+                abraeumen(self)
+                
+                # Calculate the rotation of servo(9: Elbow; -4: Shoulder; 4: Wrist)
+                rotation = [int(direction * normalized_distance * servo_movement) #round(normalized_distance/4)
+                    for servo_movement in (-3, 0,0)]  
+        # Move the respective servos
+        if forward:
+            self.move_elbow(self.elbow.position + rotation[0])     #+50 ausgleichen mit der -50 von der Schulter
+            time.sleep(1)
+            #self.move_shoulder(self.shoulder.position - 100 + rotation[1]) #-50 vehindern des aufstoßens auf den boden
+            #time.sleep(1)
+            self.move_shoulder(self.shoulder.position +rotation[1]) #+100 zur reibungslose bewegung des elbows
+            time.sleep(1)
+            self.move_wrist(self.wrist.position + rotation[2])
+            time.sleep(1)
+            #self.move_wrist(self.wrist.position + rotation[2])
+        else:
+            self.move_shoulder(300)    
+            self.move_wrist(225)
+            self.move_elbow(300)
+            
+        
+
+    def move_forward(self, distance):
+        if distance<=5:
+                self.close_hand()
+        else: 
+                self.move_elbow(self.elbow.position+45)
+                time.sleep(1)
+                self.move_shoulder(self.shoulder.position-20)
+                time.sleep(1)
+                self.move_wrist(self.wrist.position+20)
+                time.sleep(1)
+                
+        
+    def rotate_by_degree(self, degree):
+        """
+        Rotate the robotic arm by a given degree.
+
+        The argument is the rotation degree. (Positive values result in a rotation
+        to the left, negative values result in a rotation to the right.)
+        """
+        rotation = int(17 / 6 * degree)
+        self.base.move_to_position(self.base.position + rotation)
+        #self.move_wrist(325)
+
+    def get_all_positions(self):
+        """Print the current positions of all th servos."""
+        print("\nCurrent position of all the servos",
+              "\n\tBase:\t\t", self.base.position,
+              "\n\tShoulder:\t", self.shoulder.position,
+              "\n\tElbow:\t\t", self.elbow.position,
+              "\n\tWrist:\t\t", self.wrist.position)
+              
+    def moving_test_shoulder(self):
+        self.move_shoulder(200)
+        while self.shoulder.position+100 <= 495:
+                self.move_shoulder(self.shoulder.position + 100)
+                time.sleep(.5)
+        self.move_shoulder(240)
+        
+    def moving_test_elbow(self):
+        self.move_elbow(236)
+        while self.elbow.position+100 <= 595:
+                self.move_elbow(self.elbow.position + 100)
+                time.sleep(.5)
+        self.move_elbow(300)
+                
