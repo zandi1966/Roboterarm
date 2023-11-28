@@ -2,7 +2,7 @@
 
 # Import necessary libraries
 import sys
-import cv2 as cv
+import cv as cv
 import numpy as np
 import logging
 import datetime
@@ -119,7 +119,53 @@ while True:
     # Detect edges using Canny
     image_canny: np.ndarray[np.uint8] = cv.Canny(
         image_differences, threshold1, threshold2)
+    
+    # using a findContours() function 
+    contours, _ = cv.findContours( 
+        threshold1, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE) 
+    
+    for contour in image_canny: 
 
+             # cv.approxPloyDP() function to approximate the shape 
+            approx = cv.approxPolyDP( 
+                image_canny, 0.01 * cv.arcLength(contours, True), True) 
+      
+             # using drawContours() function 
+            cv.drawContours(image_canny, [contour], 0, (0, 0, 255), 5) 
+  
+    
+            # here we are ignoring first counter because  
+            # findcontour function detects whole image as shape 
+            if i == 0: 
+                    i = 1
+                    continue
+            # finding center point of shape 
+            M = cv.moments(contour) 
+            if M['m00'] != 0.0: 
+                x = int(M['m10']/M['m00']) 
+                y = int(M['m01']/M['m00']) 
+  
+            # putting shape name at center of each shape 
+            if len(approx) == 3: 
+                cv.putText(image_differences, 'Triangle', (x, y), 
+                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+  
+            elif len(approx) == 4: 
+                cv.putText(image_differences, 'Quadrilateral', (x, y), 
+                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+  
+            elif len(approx) == 5: 
+                cv.putText(image_differences, 'Pentagon', (x, y), 
+                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+  
+            elif len(approx) == 6: 
+                cv.putText(image_differences, 'Hexagon', (x, y), 
+                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+  
+            else: 
+                cv.putText(image_differences, 'circle', (x, y), 
+                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+                
     # Remove overlaps and noise using dilation
     kernel: np.ndarray[np.float64] = np.ones((5, 5))
     image_dilation: np.ndarray[np.uint8] = cv.dilate(image_canny, kernel, iterations=1)
