@@ -81,6 +81,27 @@ while True:
     image_grayscale: np.ndarray[np.uint8] = cv.cvtColor(
         image_blurred, cv.COLOR_BGR2GRAY)
 
+    while(1): 
+        # It converts the BGR color space of image to HSV color space 
+        hsv = cv.cvtColor(image_blurred, cv.COLOR_BGR2HSV) 
+      
+        # Threshold of blue in HSV space 
+        lower_blue = np.array([60, 35, 140]) 
+        upper_blue = np.array([180, 255, 255]) 
+  
+        # preparing the mask to overlay 
+        mask = cv.inRange(hsv, lower_blue, upper_blue) 
+      
+        # The black region in the mask has the value of 0, 
+        # so when multiplied with original image removes all non-blue regions 
+        result = cv.bitwise_and(image_blurred, image_blurred, mask = mask) 
+  
+        cv.imshow('frame', image_blurred) 
+        cv.imshow('mask', mask) 
+        cv.imshow('result', result) 
+      
+        cv.waitKey(0) 
+
     # Calculate absolute difference of current image and median frame
     image_differences: np.ndarray[np.uint8] = cv.absdiff(
         image_grayscale, gray_median_frame)
