@@ -2,7 +2,7 @@
 
 # Import necessary libraries
 import sys
-import cv as cv
+import cv2 as cv
 import numpy as np
 import logging
 import datetime
@@ -69,6 +69,24 @@ while True:
     image_original: np.ndarray[np.uint8]
     success, image_original = camera_one.capture.read()
 
+    image_HSV = cv.cvtColor(image_original, cv.BGR2HSV)
+
+    h_min = cv.getTrackbarPos("Hue Min","TrackBars")
+    h_max = cv.getTrackbarPos("Hue Max","TrackBars")
+    s_min = cv.getTrackbarPos("Sat Min","TrackBars")
+    s_max = cv.getTrackbarPos("Sat Max","TrackBars")
+    v_min = cv.getTrackbarPos("Val Min","TrackBars")
+    v_max = cv.getTrackbarPos("Val Max","TrackBars")
+    lower = np.array(h_min,s_min,v_min)
+    upper = np.array(h_max,s_max,v_max)
+    colormask = cv.inRange(image_HSV,lower,upper)
+    image_result = cv.bitwise_and(image_original,image_original,mask=colormask)
+    
+    cv.imshow("HSV",image_HSV)
+    cv.imshow("Mask",mask)
+    cv.imshow("Masked_picture",image_result)
+
+
     # Check if stream is working properly
     if not success:
         logger.error("Can't receive frame (stream end?). Exiting ...")
@@ -104,7 +122,7 @@ while True:
 
     # Calculate absolute difference of current image and median frame
     image_differences: np.ndarray[np.uint8] = cv.absdiff(
-        image_grayscale, gray_median_frame)
+        image_grayscale, gray_median_frame) 
 
     # Threshold to binarize
     _threshold: float
@@ -119,52 +137,10 @@ while True:
     # Detect edges using Canny
     image_canny: np.ndarray[np.uint8] = cv.Canny(
         image_differences, threshold1, threshold2)
-    
+
     # using a findContours() function 
     contours, _ = cv.findContours( 
-        threshold1, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE) 
-    
-    for contour in image_canny: 
-
-             # cv.approxPloyDP() function to approximate the shape 
-            approx = cv.approxPolyDP( 
-                image_canny, 0.01 * cv.arcLength(contours, True), True) 
-      
-             # using drawContours() function 
-            cv.drawContours(image_canny, [contour], 0, (0, 0, 255), 5) 
-  
-    
-            # here we are ignoring first counter because  
-            # findcontour function detects whole image as shape 
-            if i == 0: 
-                    i = 1
-                    continue
-            # finding center point of shape 
-            M = cv.moments(contour) 
-            if M['m00'] != 0.0: 
-                x = int(M['m10']/M['m00']) 
-                y = int(M['m01']/M['m00']) 
-  
-            # putting shape name at center of each shape 
-            if len(approx) == 3: 
-                cv.putText(image_differences, 'Triangle', (x, y), 
-                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-  
-            elif len(approx) == 4: 
-                cv.putText(image_differences, 'Quadrilateral', (x, y), 
-                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-  
-            elif len(approx) == 5: 
-                cv.putText(image_differences, 'Pentagon', (x, y), 
-                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-  
-            elif len(approx) == 6: 
-                cv.putText(image_differences, 'Hexagon', (x, y), 
-                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-  
-            else: 
-                cv.putText(image_differences, 'circle', (x, y), 
-                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+        image_differences, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE) 
                 
     # Remove overlaps and noise using dilation
     kernel: np.ndarray[np.float64] = np.ones((5, 5))
